@@ -76,7 +76,7 @@ public class GatewayService {
         usageEventPublisher.publish(event);
 
         // 6. Cache save
-        cacheService.put(team.getId(), request, response);
+        if (!result.fallbackUsed()) { cacheService.put(team.getId(), request, response); }
 
         log.info("USAGE team={} provider={} model={} totalTokens={} latencyMs={} fallback={}",
                 team.getName(), result.providerName(), response.model(),
