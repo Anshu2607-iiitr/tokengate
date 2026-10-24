@@ -33,6 +33,15 @@ public interface UsageRecordRepository extends JpaRepository<UsageRecord, Long> 
             """)
     List<ModelTotals> totalsByModelSince(@Param("teamId") Long teamId, @Param("from") Instant from);
 
+    @Query("""
+            select sum(u.costUsd)
+            from UsageRecord u
+            where u.teamId = :teamId and u.createdAt >= :from and u.eventId <> :eventId
+            """)
+    BigDecimal costForTeamSinceExcluding(@Param("teamId") Long teamId,
+                                         @Param("from") Instant from,
+                                         @Param("eventId") String eventId);
+
     interface UsageTotals {
         Long getRequests();
         Long getTotalTokens();

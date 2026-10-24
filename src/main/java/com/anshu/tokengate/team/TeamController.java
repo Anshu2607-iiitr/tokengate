@@ -2,6 +2,7 @@ package com.anshu.tokengate.team;
 
 import com.anshu.tokengate.team.TeamDtos.CreateTeamRequest;
 import com.anshu.tokengate.team.TeamDtos.CreateTeamResponse;
+import com.anshu.tokengate.team.TeamDtos.SetBudgetRequest;
 import com.anshu.tokengate.team.TeamDtos.TeamSummary;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -34,7 +35,17 @@ public class TeamController {
     @GetMapping
     public List<TeamSummary> list() {
         return teamService.listTeams().stream()
-                .map(t -> new TeamSummary(t.getId(), t.getName(), t.getApiKeyPrefix(), t.isActive(), t.getCreatedAt()))
+                .map(TeamController::toSummary)
                 .toList();
+    }
+
+    @PutMapping("/{id}/budget")
+    public TeamSummary setBudget(@PathVariable Long id, @Valid @RequestBody SetBudgetRequest request) {
+        return toSummary(teamService.setDailyBudget(id, request.dailyBudgetUsd()));
+    }
+
+    private static TeamSummary toSummary(Team t) {
+        return new TeamSummary(t.getId(), t.getName(), t.getApiKeyPrefix(),
+                t.isActive(), t.getDailyBudgetUsd(), t.getCreatedAt());
     }
 }

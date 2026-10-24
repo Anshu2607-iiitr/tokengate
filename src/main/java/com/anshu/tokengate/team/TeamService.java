@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,6 +37,14 @@ public class TeamService {
         return new CreatedTeam(team, apiKey);
     }
 
+    @Transactional
+    public Team setDailyBudget(Long teamId, BigDecimal dailyBudgetUsd) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found: " + teamId));
+        team.setDailyBudgetUsd(dailyBudgetUsd);
+        return teamRepository.save(team);
+    }
+
     public Optional<Team> findActiveByApiKey(String apiKey) {
         return teamRepository.findByApiKeyHash(hash(apiKey))
                 .filter(Team::isActive);
@@ -45,7 +54,6 @@ public class TeamService {
         return teamRepository.findAll();
     }
 
-    // Example: tg_Xk9mP2... (random, guess karna impossible)
     private String generateApiKey() {
         byte[] bytes = new byte[24];
         RANDOM.nextBytes(bytes);

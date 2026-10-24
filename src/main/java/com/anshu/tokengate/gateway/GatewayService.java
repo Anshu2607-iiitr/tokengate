@@ -1,5 +1,6 @@
 package com.anshu.tokengate.gateway;
 
+import com.anshu.tokengate.budget.BudgetService;
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
 import com.anshu.tokengate.provider.LlmProvider;
@@ -20,19 +21,26 @@ public class GatewayService {
 
     private final LlmProvider provider;
     private final UsageEventPublisher usageEventPublisher;
+    private final BudgetService budgetService;
 
-    public GatewayService(LlmProvider provider, UsageEventPublisher usageEventPublisher) {
+    public GatewayService(LlmProvider provider,
+                          UsageEventPublisher usageEventPublisher,
+                          BudgetService budgetService) {
         this.provider = provider;
         this.usageEventPublisher = usageEventPublisher;
+        this.budgetService = budgetService;
     }
 
     public ChatResponse chat(ChatRequest request, Team team) {
+        // 1. Budget check: khatam ho gaya to yahin ruk jao (provider ko call nahi, paisa bacha)
+        budgetService.checkBudget(team);
+
+        // 2. Provider call
         long start = System.currentTimeMillis();
-
         ChatResponse response = provider.chat(request);
-
         long latencyMs = System.currentTimeMillis() - start;
 
+        // 3. Usage event Kafka me
         UsageEvent event = new UsageEvent(
                 UUID.randomUUID().toString(),
                 team.getId(),
@@ -45,7 +53,6 @@ public class GatewayService {
                 latencyMs,
                 Instant.now()
         );
-
         usageEventPublisher.publish(event);
 
         log.info("USAGE team={} model={} totalTokens={} latencyMs={}",

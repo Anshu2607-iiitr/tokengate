@@ -2,6 +2,7 @@ package com.anshu.tokengate.team;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 @Entity
@@ -27,6 +28,10 @@ public class Team {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
+    // null = no limit
+    @Column(name = "daily_budget_usd", precision = 12, scale = 6)
+    private BigDecimal dailyBudgetUsd;
+
     protected Team() {
         // JPA ke liye zaroori
     }
@@ -43,4 +48,9 @@ public class Team {
     public String getApiKeyPrefix() { return apiKeyPrefix; }
     public boolean isActive() { return active; }
     public Instant getCreatedAt() { return createdAt; }
+    public BigDecimal getDailyBudgetUsd() { return dailyBudgetUsd; }
+
+    public void setDailyBudgetUsd(BigDecimal dailyBudgetUsd) {
+        this.dailyBudgetUsd = dailyBudgetUsd;
+    }
 }

@@ -1,9 +1,11 @@
 package com.anshu.tokengate.team;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 public final class TeamDtos {
@@ -19,5 +21,17 @@ public final class TeamDtos {
 
     public record CreateTeamResponse(Long id, String name, String apiKey, String note) {}
 
-    public record TeamSummary(Long id, String name, String apiKeyPrefix, boolean active, Instant createdAt) {}
+    // null bhejo to limit hat jaayegi
+    public record SetBudgetRequest(
+            @DecimalMin(value = "0.0", inclusive = false) BigDecimal dailyBudgetUsd
+    ) {}
+
+    public record TeamSummary(
+            Long id,
+            String name,
+            String apiKeyPrefix,
+            boolean active,
+            BigDecimal dailyBudgetUsd,
+            Instant createdAt
+    ) {}
 }
