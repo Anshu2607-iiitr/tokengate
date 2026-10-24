@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: tokengate
+      POSTGRES_USER: tokengate
+      POSTGRES_PASSWORD: tokengate
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  kafka:
+    image: apache/kafka:latest
+    ports:
+      - "9092:9092"
