@@ -2,24 +2,31 @@ package com.anshu.tokengate.provider;
 
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
-import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
-@Component
+import java.time.Duration;
+import java.util.Set;
+
 public class OpenAiCompatibleProvider implements LlmProvider {
 
     private final String name;
+    private final Set<String> models;
     private final RestClient restClient;
 
-    public OpenAiCompatibleProvider(
-            @Value("${tokengate.provider.name}") String name,
-            @Value("${tokengate.provider.base-url}") String baseUrl,
-            @Value("${tokengate.provider.api-key}") String apiKey) {
+    public OpenAiCompatibleProvider(String name, String baseUrl, String apiKey,
+                                    Set<String> models, Duration readTimeout) {
         this.name = name;
+        this.models = models;
+
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(2)); // band server pe jaldi fail
+        requestFactory.setReadTimeout(readTimeout);              // AI ko sochne ka time
+
         this.restClient = RestClient.builder()
                 .baseUrl(baseUrl)
+                .requestFactory(requestFactory)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
     }
@@ -27,6 +34,11 @@ public class OpenAiCompatibleProvider implements LlmProvider {
     @Override
     public String name() {
         return name;
+    }
+
+    @Override
+    public boolean supports(String model) {
+        return models.contains("*") || models.contains(model);
     }
 
     @Override

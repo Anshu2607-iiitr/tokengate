@@ -22,7 +22,11 @@ server:
   
 tokengate:
   admin-token: dev-admin-secret
-  provider:
-    name: mock
-    base-url: http://localhost:8080/mock/openai/v1
-    api-key: mock-key
+  providers:
+    ollama:
+      base-url: http://localhost:11434/v1
+      api-key: ollama
+      models: "qwen2.5:1.5b"
+    mock:
+      base-url: http://localhost:8080/mock/openai/v1
+      api-key: mock-key

@@ -24,6 +24,8 @@ public class GatewayController {
         GatewayService.GatewayResult result = gatewayService.chat(request, team);
         return ResponseEntity.ok()
                 .header("X-TokenGate-Cache", result.cacheHit() ? "HIT" : "MISS")
+                .header("X-TokenGate-Provider", result.provider())
+                .header("X-TokenGate-Fallback", String.valueOf(result.fallbackUsed()))
                 .body(result.response());
     }
 }

@@ -15,7 +15,9 @@ public class PricingService {
             "gpt-4o-mini", new ModelPrice(new BigDecimal("0.15"), new BigDecimal("0.60")),
             "gpt-4o", new ModelPrice(new BigDecimal("2.50"), new BigDecimal("10.00")),
             "claude-sonnet", new ModelPrice(new BigDecimal("3.00"), new BigDecimal("15.00")),
-            "gemini-flash", new ModelPrice(new BigDecimal("0.10"), new BigDecimal("0.40"))
+            "gemini-flash", new ModelPrice(new BigDecimal("0.10"), new BigDecimal("0.40")),
+            // Self-hosted (Ollama, apne laptop pe) = free
+            "qwen2.5:1.5b", new ModelPrice(BigDecimal.ZERO, BigDecimal.ZERO)
     );
 
     private static final ModelPrice DEFAULT_PRICE =

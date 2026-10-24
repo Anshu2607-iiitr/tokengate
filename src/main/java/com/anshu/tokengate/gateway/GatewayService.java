@@ -4,7 +4,7 @@ import com.anshu.tokengate.budget.BudgetService;
 import com.anshu.tokengate.cache.ResponseCacheService;
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
-import com.anshu.tokengate.provider.LlmProvider;
+import com.anshu.tokengate.provider.ProviderRouter;
 import com.anshu.tokengate.ratelimit.RateLimitService;
 import com.anshu.tokengate.team.Team;
 import com.anshu.tokengate.usage.UsageEvent;
@@ -22,18 +22,18 @@ public class GatewayService {
 
     private static final Logger log = LoggerFactory.getLogger(GatewayService.class);
 
-    private final LlmProvider provider;
+    private final ProviderRouter providerRouter;
     private final UsageEventPublisher usageEventPublisher;
     private final BudgetService budgetService;
     private final RateLimitService rateLimitService;
     private final ResponseCacheService cacheService;
 
-    public GatewayService(LlmProvider provider,
+    public GatewayService(ProviderRouter providerRouter,
                           UsageEventPublisher usageEventPublisher,
                           BudgetService budgetService,
                           RateLimitService rateLimitService,
                           ResponseCacheService cacheService) {
-        this.provider = provider;
+        this.providerRouter = providerRouter;
         this.usageEventPublisher = usageEventPublisher;
         this.budgetService = budgetService;
         this.rateLimitService = rateLimitService;
@@ -41,30 +41,31 @@ public class GatewayService {
     }
 
     public GatewayResult chat(ChatRequest request, Team team) {
-        // 1. Rate limit (sabse sasta check, sabse pehle)
+        // 1. Rate limit
         rateLimitService.check(team);
 
-        // 2. Cache: mila to provider skip, cost $0
+        // 2. Cache
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
         if (cached.isPresent()) {
             log.info("CACHE HIT team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
-            return new GatewayResult(cached.get(), true);
+            return new GatewayResult(cached.get(), true, "cache", false);
         }
 
         // 3. Budget
         budgetService.checkBudget(team);
 
-        // 4. Provider call
+        // 4. Router: sahi provider chuno, fail ho to fallback
         long start = System.currentTimeMillis();
-        ChatResponse response = provider.chat(request);
+        ProviderRouter.ProviderResult result = providerRouter.route(request);
         long latencyMs = System.currentTimeMillis() - start;
+        ChatResponse response = result.response();
 
-        // 5. Usage event Kafka me
+        // 5. Usage event (asli provider ke naam ke saath)
         UsageEvent event = new UsageEvent(
                 UUID.randomUUID().toString(),
                 team.getId(),
                 team.getName(),
-                provider.name(),
+                result.providerName(),
                 response.model(),
                 response.usage().promptTokens(),
                 response.usage().completionTokens(),
@@ -74,14 +75,15 @@ public class GatewayService {
         );
         usageEventPublisher.publish(event);
 
-        // 6. Agli baar ke liye cache me save
+        // 6. Cache save
         cacheService.put(team.getId(), request, response);
 
-        log.info("USAGE team={} model={} totalTokens={} latencyMs={} cache=MISS",
-                team.getName(), response.model(), response.usage().totalTokens(), latencyMs);
+        log.info("USAGE team={} provider={} model={} totalTokens={} latencyMs={} fallback={}",
+                team.getName(), result.providerName(), response.model(),
+                response.usage().totalTokens(), latencyMs, result.fallbackUsed());
 
-        return new GatewayResult(response, false);
+        return new GatewayResult(response, false, result.providerName(), result.fallbackUsed());
     }
 
-    public record GatewayResult(ChatResponse response, boolean cacheHit) {}
+    public record GatewayResult(ChatResponse response, boolean cacheHit, String provider, boolean fallbackUsed) {}
 }
