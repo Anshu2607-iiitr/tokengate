@@ -127,6 +127,22 @@ Swagger UI: http://localhost:8080/swagger-ui.html
 
 The default admin token is `dev-admin-secret` (local development only). Override it with the `TOKENGATE_ADMINTOKEN` environment variable.
 
+## Production deployment
+
+`docker-compose.prod.yml` is the hardened stack for a single server:
+
+- Only **Caddy** is exposed (ports 80/443) and it obtains HTTPS certificates automatically.
+- nginx forwards only `/v1` and `/admin` to the backend, so Swagger and `/actuator` are not reachable from the internet (Swagger is also disabled by env var).
+- Postgres, Redis, Kafka, Ollama and Prometheus have no public ports. Grafana listens on `127.0.0.1` only and is opened through an SSH tunnel.
+- Secrets (admin token, database and Grafana passwords) come from a `.env` file on the server (see `.env.example`); compose refuses to start if any is missing.
+- Postgres, Ollama models and Grafana use named volumes; every service restarts automatically.
+
+```bash
+cp .env.example .env   # fill in real values
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:1.5b
+```
+
 ## API quick reference
 
 | Method | Path | Auth | Purpose |
