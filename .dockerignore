@@ -1,0 +1,8 @@
+target
+dashboard
+.git
+.github
+docs
+.idea
+.vscode
+*.md
