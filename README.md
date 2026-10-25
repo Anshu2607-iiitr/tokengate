@@ -59,6 +59,7 @@ flowchart LR
 | Cost analytics | Kafka consumer computes cost per model with `BigDecimal` |
 | Multi-provider fallback | Ordered providers, connect timeout, automatic failover |
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
+| Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Dashboard | React: usage stats, model breakdown, playground, team admin, alerts |
 | API docs | Swagger UI at `/swagger-ui.html` |
 
@@ -67,6 +68,7 @@ flowchart LR
 | Scenario | Result |
 |---|---|
 | Repeated prompt (Ollama, local CPU) | **~6,000 ms to ~30 ms** with cache hit, $0 provider cost |
+| Streaming, warm local model | **First token in ~280 ms** instead of waiting ~6 s for the full answer |
 | Primary provider down | Request still served by fallback provider, no error to client |
 | Team over daily budget | Blocked with `429` before the provider is called |
 | 13 requests in one minute (limit 10) | Requests 11 to 13 return `429` with `Retry-After` |
@@ -82,6 +84,7 @@ flowchart LR
 - **Tenant-isolated cache**: team id is part of the cache key, so one team can never receive another team's cached answer.
 - **Fail-open on Redis errors**: if Redis is down, rate limiting and caching are skipped with a warning instead of taking the gateway down.
 - **No caching of degraded responses**: fallback responses are not cached, so the system recovers fully once the primary provider is back. (Found during testing.)
+- **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
