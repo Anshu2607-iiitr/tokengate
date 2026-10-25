@@ -60,6 +60,7 @@ flowchart LR
 | Multi-provider fallback | Ordered providers, connect timeout, automatic failover |
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
+| Kafka resilience | Exponential-backoff retries, then a Dead Letter Topic; failed events are stored and listed at `/admin/dead-letters` |
 | Dashboard | React: usage stats, model breakdown, playground, team admin, alerts |
 | API docs | Swagger UI at `/swagger-ui.html` |
 
@@ -88,6 +89,7 @@ flowchart LR
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Sliding-window rate limit**: a fixed window let a client send 2x the limit around a minute boundary (verified: 20 requests in 6 seconds with a 10/min limit). The sliding log counts the exact last 60 seconds; the Lua script makes remove + count + add atomic, so parallel requests cannot both slip in. Trade-off: memory per team grows with the limit.
 - **Versioned schema with Flyway**: the schema lives in numbered SQL migrations (`db/migration`), and Hibernate only validates it (`ddl-auto: validate`). V2 adds foreign keys and CHECK constraints that ORM auto-DDL never created, so the database rejects invalid data even if application code has a bug. The existing local database was adopted with `baseline-on-migrate`; fresh databases (Testcontainers, CI) run every migration, so migrations are tested on every push.
+- **Retries + Dead Letter Topic**: by default a failing Kafka event was retried a few times and then silently dropped. Now transient errors get 3 retries with exponential backoff (1s, 2s, 4s), while errors that can never succeed (broken JSON, foreign-key violation for an unknown team) skip retries. Either way the event goes to `llm-usage-events.DLT` with error headers, a separate consumer stores it, and the main pipeline keeps flowing. Added with a new Flyway migration (V3), without touching V1/V2.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack
@@ -137,7 +139,7 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 ## Tests
 
 ```bash
-./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest"
+./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest,DeadLetterIntegrationTest"
 ```
 
 Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.
