@@ -70,3 +70,7 @@ td code { font-size: 12px; }
   .bar-row { grid-template-columns: 1fr; }
   .bar-meta { grid-column: 1; }
 }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); cursor: pointer; user-select: none; flex: 0 0 auto; }
+.toggle input { width: 16px; height: 16px; accent-color: var(--accent); }
+.cursor { display: inline-block; margin-left: 2px; color: var(--accent); animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }

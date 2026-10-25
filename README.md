@@ -58,6 +58,7 @@ flowchart LR
 | Budget alerts | Separate Kafka consumer group, one alert per threshold per day |
 | Cost analytics | Kafka consumer computes cost per model with `BigDecimal` |
 | Multi-provider fallback | Ordered providers, connect timeout, automatic failover |
+| Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Dashboard | React: usage stats, model breakdown, playground, team admin, alerts |
 | API docs | Swagger UI at `/swagger-ui.html` |
 
@@ -81,6 +82,7 @@ flowchart LR
 - **Tenant-isolated cache**: team id is part of the cache key, so one team can never receive another team's cached answer.
 - **Fail-open on Redis errors**: if Redis is down, rate limiting and caching are skipped with a warning instead of taking the gateway down.
 - **No caching of degraded responses**: fallback responses are not cached, so the system recovers fully once the primary provider is back. (Found during testing.)
+- **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack
@@ -130,7 +132,7 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 ## Tests
 
 ```bash
-./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest"
+./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest"
 ```
 
 Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.
@@ -139,7 +141,6 @@ Unit tests cover cost calculation, budget enforcement (with Mockito) and provide
 
 - Sliding-window or token-bucket rate limiting
 - Redis-based real-time spend counter to tighten budget enforcement
-- Streaming responses (SSE)
 - Flyway migrations
 - Model prices from configuration or a pricing table
 

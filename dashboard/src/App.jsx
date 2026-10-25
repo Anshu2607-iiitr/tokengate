@@ -128,6 +128,7 @@ function Stat({ label, value }) {
 function Playground({ authHeaders, onDone }) {
   const [model, setModel] = useState(MODELS[0])
   const [prompt, setPrompt] = useState('')
+  const [stream, setStream] = useState(true)
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -138,26 +139,83 @@ function Playground({ authHeaders, onDone }) {
     setError('')
     setResult(null)
     const started = performance.now()
+    const body = { model, messages: [{ role: 'user', content: prompt }] }
     try {
-      const { data, headers } = await api('/v1/chat/completions', {
-        method: 'POST',
-        headers: authHeaders,
-        body: { model, messages: [{ role: 'user', content: prompt }] },
-      })
-      setResult({
-        text: data.choices?.[0]?.message?.content ?? '',
-        tokens: data.usage?.total_tokens ?? 0,
-        provider: headers.get('X-TokenGate-Provider'),
-        cache: headers.get('X-TokenGate-Cache'),
-        fallback: headers.get('X-TokenGate-Fallback') === 'true',
-        ms: Math.round(performance.now() - started),
-      })
+      if (stream) await sendStreaming(body, started)
+      else await sendNormal(body, started)
       onDone()
     } catch (e) {
       setError(`${e.status ?? ''} ${e.message}`.trim())
     } finally {
       setBusy(false)
     }
+  }
+
+  async function sendNormal(body, started) {
+    const { data, headers } = await api('/v1/chat/completions', { method: 'POST', headers: authHeaders, body })
+    setResult({
+      text: data.choices?.[0]?.message?.content ?? '',
+      tokens: data.usage?.total_tokens ?? 0,
+      provider: headers.get('X-TokenGate-Provider'),
+      cache: headers.get('X-TokenGate-Cache'),
+      fallback: headers.get('X-TokenGate-Fallback') === 'true',
+      ms: Math.round(performance.now() - started),
+      firstMs: null,
+      streaming: false,
+    })
+  }
+
+  // SSE: response body ko chunk-by-chunk padho aur har "data:" line se naya text jodo
+  async function sendStreaming(body, started) {
+    const res = await fetch('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({ ...body, stream: true }),
+    })
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`
+      try { const j = await res.json(); msg = j.error || j.detail || msg } catch { /* not json */ }
+      const err = new Error(msg)
+      err.status = res.status
+      throw err
+    }
+
+    const meta = {
+      provider: res.headers.get('X-TokenGate-Provider'),
+      cache: res.headers.get('X-TokenGate-Cache'),
+      fallback: res.headers.get('X-TokenGate-Fallback') === 'true',
+    }
+    let text = ''
+    let tokens = 0
+    let firstMs = null
+    setResult({ ...meta, text: '', tokens: 0, ms: 0, firstMs: null, streaming: true })
+
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue
+        const data = line.slice(5).trim()
+        if (!data || data === '[DONE]') continue
+        let json
+        try { json = JSON.parse(data) } catch { continue }
+        if (json.error) throw new Error(json.error)
+        const piece = json.choices?.[0]?.delta?.content
+        if (piece) {
+          if (firstMs === null) firstMs = Math.round(performance.now() - started)
+          text += piece
+        }
+        if (json.usage) tokens = json.usage.total_tokens
+        setResult({ ...meta, text, tokens, ms: Math.round(performance.now() - started), firstMs, streaming: true })
+      }
+    }
+    setResult({ ...meta, text, tokens, ms: Math.round(performance.now() - started), firstMs, streaming: false })
   }
 
   return (
@@ -167,11 +225,15 @@ function Playground({ authHeaders, onDone }) {
         <select value={model} onChange={(e) => setModel(e.target.value)}>
           {MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
+        <label className="toggle">
+          <input type="checkbox" checked={stream} onChange={(e) => setStream(e.target.checked)} />
+          Stream response
+        </label>
       </div>
       <textarea placeholder="Ask anything... (Ctrl+Enter to send)" value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && e.ctrlKey && send()} />
-      <button onClick={send} disabled={busy}>{busy ? 'Thinking...' : 'Send via TokenGate'}</button>
+      <button onClick={send} disabled={busy}>{busy ? (stream ? 'Streaming...' : 'Thinking...') : 'Send via TokenGate'}</button>
       {error && <p className="error">{error}</p>}
       {result && (
         <>
@@ -179,16 +241,19 @@ function Playground({ authHeaders, onDone }) {
             <span className={`badge ${result.provider === 'ollama' ? 'green' : ''}`}>provider: {result.provider}</span>
             <span className={`badge ${result.cache === 'HIT' ? 'blue' : ''}`}>cache: {result.cache}</span>
             {result.fallback && <span className="badge orange">fallback used</span>}
+            {result.firstMs !== null && <span className="badge blue">first token {num(result.firstMs)} ms</span>}
             <span className="badge">{num(result.tokens)} tokens</span>
-            <span className="badge">{num(result.ms)} ms</span>
+            <span className="badge">{num(result.ms)} ms total</span>
           </div>
-          <div className="answer">{result.text}</div>
+          <div className="answer">
+            {result.text}
+            {result.streaming && <span className="cursor">{'\u258D'}</span>}
+          </div>
         </>
       )}
     </section>
   )
 }
-
 function AdminView() {
   const [token, setToken] = useState('')
   const [teams, setTeams] = useState(null)
