@@ -165,6 +165,14 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 
 Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.
 
+## Smoke test
+
+After starting the stack, one command checks the running system end to end (16 checks: health, auth 401/403, gateway, Redis cache hit, SSE streaming, Kafka cost pipeline, budget 429, rate limit 429, dead letters, Prometheus metrics, and that nginx does not expose actuator):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1
+```
+
 ## Roadmap
 
 - Redis-based real-time spend counter to tighten budget enforcement
