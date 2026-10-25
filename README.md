@@ -1,5 +1,7 @@
 # TokenGate
 
+![CI](https://github.com/Anshu2607-iiitr/tokengate/actions/workflows/ci.yml/badge.svg)
+
 **An LLM API gateway that tracks, controls and cuts AI costs per team.**
 
 Built with Spring Boot, Kafka, Redis, PostgreSQL and React.
