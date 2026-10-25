@@ -39,7 +39,7 @@ flowchart LR
 ### Request flow
 
 1. **Auth**: API key is hashed (SHA-256) and looked up. Raw keys are never stored.
-2. **Rate limit**: per-team fixed window in Redis. Over the limit returns `429` with `Retry-After`.
+2. **Rate limit**: per-team sliding window (Redis sorted set + Lua). Over the limit returns `429` with `Retry-After`.
 3. **Cache**: identical prompt from the same team is served from Redis. Provider is skipped and the cost is $0.
 4. **Budget**: if today's spend has reached the team's daily budget, the request is rejected with `429` before any provider call.
 5. **Routing and fallback**: the router picks providers that support the model, in priority order. If the primary fails, the next one serves the request.
@@ -52,7 +52,7 @@ flowchart LR
 |---|---|
 | OpenAI-compatible gateway | `POST /v1/chat/completions`, apps only change base URL and key |
 | Per-team API keys | Generated once, stored as SHA-256 hash |
-| Rate limiting | Redis `INCR` + TTL, per team per minute |
+| Rate limiting | Sliding window log in a Redis sorted set, checked by one atomic Lua script, per team |
 | Response caching | Redis, key = team + SHA-256 of request, 10 min TTL |
 | Daily budgets | Enforced before provider call, `429` when exceeded |
 | Budget alerts | Separate Kafka consumer group, one alert per threshold per day |
@@ -86,6 +86,7 @@ flowchart LR
 - **No caching of degraded responses**: fallback responses are not cached, so the system recovers fully once the primary provider is back. (Found during testing.)
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
+- **Sliding-window rate limit**: a fixed window let a client send 2x the limit around a minute boundary (verified: 20 requests in 6 seconds with a 10/min limit). The sliding log counts the exact last 60 seconds; the Lua script makes remove + count + add atomic, so parallel requests cannot both slip in. Trade-off: memory per team grows with the limit.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack
@@ -135,14 +136,13 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 ## Tests
 
 ```bash
-./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest"
+./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest"
 ```
 
 Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.
 
 ## Roadmap
 
-- Sliding-window or token-bucket rate limiting
 - Redis-based real-time spend counter to tighten budget enforcement
 - Flyway migrations
 - Model prices from configuration or a pricing table
