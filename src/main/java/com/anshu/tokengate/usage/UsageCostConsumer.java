@@ -1,5 +1,6 @@
 package com.anshu.tokengate.usage;
 
+import com.anshu.tokengate.metrics.GatewayMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -16,11 +17,15 @@ public class UsageCostConsumer {
 
     private final UsageRecordRepository usageRecordRepository;
     private final PricingService pricingService;
+    private final GatewayMetrics metrics;
     private final JsonMapper jsonMapper = JsonMapper.builder().build();
 
-    public UsageCostConsumer(UsageRecordRepository usageRecordRepository, PricingService pricingService) {
+    public UsageCostConsumer(UsageRecordRepository usageRecordRepository,
+                             PricingService pricingService,
+                             GatewayMetrics metrics) {
         this.usageRecordRepository = usageRecordRepository;
         this.pricingService = pricingService;
+        this.metrics = metrics;
     }
 
     @KafkaListener(
@@ -32,7 +37,6 @@ public class UsageCostConsumer {
     public void onUsageEvent(String message) {
         UsageEvent event = jsonMapper.readValue(message, UsageEvent.class);
 
-        // Idempotency: same event dobara aaye to skip
         if (usageRecordRepository.existsByEventId(event.eventId())) {
             log.warn("Duplicate event skipped eventId={}", event.eventId());
             return;
@@ -42,6 +46,7 @@ public class UsageCostConsumer {
                 event.model(), event.promptTokens(), event.completionTokens());
 
         usageRecordRepository.save(new UsageRecord(event, cost));
+        metrics.cost(event.teamName(), event.model(), cost);
 
         log.info("COST team={} model={} tokens={} costUsd={}",
                 event.teamName(), event.model(), event.totalTokens(), cost.toPlainString());

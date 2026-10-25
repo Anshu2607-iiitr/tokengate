@@ -1,12 +1,16 @@
 package com.anshu.tokengate.gateway;
 
+import com.anshu.tokengate.budget.BudgetExceededException;
 import com.anshu.tokengate.budget.BudgetService;
 import com.anshu.tokengate.cache.ResponseCacheService;
 import com.anshu.tokengate.dto.ChatMessage;
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
+import com.anshu.tokengate.metrics.GatewayMetrics;
 import com.anshu.tokengate.provider.LlmProvider;
 import com.anshu.tokengate.provider.ProviderRouter;
+import com.anshu.tokengate.provider.ProviderUnavailableException;
+import com.anshu.tokengate.ratelimit.RateLimitExceededException;
 import com.anshu.tokengate.ratelimit.RateLimitService;
 import com.anshu.tokengate.stream.SseWriter;
 import com.anshu.tokengate.stream.StreamChunks;
@@ -34,34 +38,44 @@ public class GatewayService {
     private final BudgetService budgetService;
     private final RateLimitService rateLimitService;
     private final ResponseCacheService cacheService;
+    private final GatewayMetrics metrics;
 
     public GatewayService(ProviderRouter providerRouter,
                           UsageEventPublisher usageEventPublisher,
                           BudgetService budgetService,
                           RateLimitService rateLimitService,
-                          ResponseCacheService cacheService) {
+                          ResponseCacheService cacheService,
+                          GatewayMetrics metrics) {
         this.providerRouter = providerRouter;
         this.usageEventPublisher = usageEventPublisher;
         this.budgetService = budgetService;
         this.rateLimitService = rateLimitService;
         this.cacheService = cacheService;
+        this.metrics = metrics;
     }
 
     /* ---------------- Normal (non-streaming) ---------------- */
 
     public GatewayResult chat(ChatRequest request, Team team) {
-        rateLimitService.check(team);
+        checkRateLimit(team);
 
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
         if (cached.isPresent()) {
+            metrics.request(team, "cache", request.model(), true, false, false);
             log.info("CACHE HIT team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return new GatewayResult(cached.get(), true, "cache", false);
         }
 
-        budgetService.checkBudget(team);
+        checkBudget(team);
 
         long start = System.currentTimeMillis();
-        ProviderRouter.ProviderResult result = providerRouter.route(request);
+        ProviderRouter.ProviderResult result;
+        try {
+            result = providerRouter.route(request);
+        } catch (ProviderUnavailableException e) {
+            metrics.rejected("provider_unavailable");
+            throw e;
+        }
         long latencyMs = System.currentTimeMillis() - start;
         ChatResponse response = result.response();
 
@@ -69,6 +83,10 @@ public class GatewayService {
         if (!result.fallbackUsed()) {
             cacheService.put(team.getId(), request, response);
         }
+
+        metrics.request(team, result.providerName(), response.model(), false, false, result.fallbackUsed());
+        metrics.tokens(team, response.model(), response.usage().totalTokens());
+        metrics.latency(result.providerName(), false, latencyMs);
 
         log.info("USAGE team={} provider={} model={} totalTokens={} latencyMs={} fallback={}",
                 team.getName(), result.providerName(), response.model(),
@@ -80,8 +98,7 @@ public class GatewayService {
     /* ---------------- Streaming (SSE) ---------------- */
 
     public void chatStream(ChatRequest request, Team team, HttpServletResponse response) {
-        // Pehle wahi checks. Inke errors normal JSON (429 etc.) banenge, kyunki abhi kuch likha nahi gaya
-        rateLimitService.check(team);
+        checkRateLimit(team);
 
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
         if (cached.isPresent()) {
@@ -91,11 +108,12 @@ public class GatewayService {
             sse.send(StreamChunks.finish(c.id(), c.model()));
             sse.send(StreamChunks.usage(c.id(), c.model(), c.usage()));
             sse.done();
+            metrics.request(team, "cache", request.model(), true, true, false);
             log.info("CACHE HIT (stream) team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return;
         }
 
-        budgetService.checkBudget(team);
+        checkBudget(team);
 
         long start = System.currentTimeMillis();
         long[] firstChunkAt = {0};
@@ -105,7 +123,6 @@ public class GatewayService {
         try {
             outcome = providerRouter.routeStream(request, (providerName, fallbackUsed, data) -> {
                 if (writer[0] == null) {
-                    // Pehla chunk aaya: ab pata hai kaunsa provider jawab de raha hai, headers set karo
                     writer[0] = new SseWriter(response, headers(providerName, fallbackUsed, false));
                     firstChunkAt[0] = System.currentTimeMillis();
                 }
@@ -113,8 +130,12 @@ public class GatewayService {
             });
         } catch (RuntimeException e) {
             if (writer[0] == null) {
-                throw e; // kuch nahi bheja: normal error response (503 etc.)
+                if (e instanceof ProviderUnavailableException) {
+                    metrics.rejected("provider_unavailable");
+                }
+                throw e;
             }
+            metrics.rejected("stream_interrupted");
             log.warn("Stream interrupted team={}: {}", team.getName(), e.getMessage());
             try {
                 writer[0].send("{\"error\":\"stream interrupted\"}");
@@ -134,7 +155,6 @@ public class GatewayService {
         long latencyMs = System.currentTimeMillis() - start;
         long firstTokenMs = firstChunkAt[0] - start;
 
-        // Stream khatam: saare chunks jodke ek normal response banao (usage + cache ke liye)
         LlmProvider.StreamResult result = outcome.result();
         ChatResponse.Usage usage = result.usage() != null ? result.usage() : estimateUsage(request, result.content());
         ChatResponse full = new ChatResponse(
@@ -148,12 +168,35 @@ public class GatewayService {
             cacheService.put(team.getId(), request, full);
         }
 
+        metrics.request(team, outcome.providerName(), full.model(), false, true, outcome.fallbackUsed());
+        metrics.tokens(team, full.model(), usage.totalTokens());
+        metrics.latency(outcome.providerName(), true, latencyMs);
+        metrics.firstToken(outcome.providerName(), firstTokenMs);
+
         log.info("USAGE (stream) team={} provider={} model={} totalTokens={} firstTokenMs={} latencyMs={} fallback={}",
                 team.getName(), outcome.providerName(), full.model(), usage.totalTokens(),
                 firstTokenMs, latencyMs, outcome.fallbackUsed());
     }
 
     /* ---------------- Helpers ---------------- */
+
+    private void checkRateLimit(Team team) {
+        try {
+            rateLimitService.check(team);
+        } catch (RateLimitExceededException e) {
+            metrics.rejected("rate_limit");
+            throw e;
+        }
+    }
+
+    private void checkBudget(Team team) {
+        try {
+            budgetService.checkBudget(team);
+        } catch (BudgetExceededException e) {
+            metrics.rejected("budget");
+            throw e;
+        }
+    }
 
     private void publishUsage(Team team, String providerName, ChatResponse response, long latencyMs) {
         usageEventPublisher.publish(new UsageEvent(
@@ -184,7 +227,6 @@ public class GatewayService {
         return response.choices().get(0).message().content();
     }
 
-    // Agar provider ne usage nahi bheja to andaza (4 chars = 1 token)
     private static ChatResponse.Usage estimateUsage(ChatRequest request, String content) {
         int promptChars = request.messages().stream().mapToInt(m -> m.content().length()).sum();
         int prompt = Math.max(1, promptChars / 4);

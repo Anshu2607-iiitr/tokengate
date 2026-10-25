@@ -61,6 +61,7 @@ flowchart LR
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Kafka resilience | Exponential-backoff retries, then a Dead Letter Topic; failed events are stored and listed at `/admin/dead-letters` |
+| Observability | Micrometer metrics (RED: rate, errors, duration + cost, cache hit rate, TTFT, dead letters) scraped by Prometheus, with a provisioned Grafana dashboard |
 | Dashboard | React: usage stats, model breakdown, playground, team admin, alerts |
 | API docs | Swagger UI at `/swagger-ui.html` |
 
@@ -90,6 +91,7 @@ flowchart LR
 - **Sliding-window rate limit**: a fixed window let a client send 2x the limit around a minute boundary (verified: 20 requests in 6 seconds with a 10/min limit). The sliding log counts the exact last 60 seconds; the Lua script makes remove + count + add atomic, so parallel requests cannot both slip in. Trade-off: memory per team grows with the limit.
 - **Versioned schema with Flyway**: the schema lives in numbered SQL migrations (`db/migration`), and Hibernate only validates it (`ddl-auto: validate`). V2 adds foreign keys and CHECK constraints that ORM auto-DDL never created, so the database rejects invalid data even if application code has a bug. The existing local database was adopted with `baseline-on-migrate`; fresh databases (Testcontainers, CI) run every migration, so migrations are tested on every push.
 - **Retries + Dead Letter Topic**: by default a failing Kafka event was retried a few times and then silently dropped. Now transient errors get 3 retries with exponential backoff (1s, 2s, 4s), while errors that can never succeed (broken JSON, foreign-key violation for an unknown team) skip retries. Either way the event goes to `llm-usage-events.DLT` with error headers, a separate consumer stores it, and the main pipeline keeps flowing. Added with a new Flyway migration (V3), without touching V1/V2.
+- **Observability with the RED method**: custom Micrometer metrics cover rate (requests by provider, cache hit/miss), errors (rejections by reason: rate limit, budget, provider unavailable) and duration (provider latency and time-to-first-token histograms for p50/p95), plus business metrics (cost per team, tokens, dead letters). Grafana's data source and dashboard are provisioned as code. Caveat: tags like `team` and `model` are fine at this scale but must be bounded in production to avoid high-cardinality metrics.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack

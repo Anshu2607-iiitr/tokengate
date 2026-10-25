@@ -33,3 +33,12 @@ tokengate:
     mock:
       base-url: http://localhost:8080/mock/openai/v1
       api-key: mock-key
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: tokengate
