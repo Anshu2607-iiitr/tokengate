@@ -6,60 +6,62 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
-@Component
+// Authentication: "ye request kiski hai?" Sirf pehchaanta hai, block nahi karta.
+// Block karna (authorization) SecurityConfig ke rules ka kaam hai.
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
-    public static final String TEAM_ATTRIBUTE = "authenticatedTeam";
-
     private final TeamService teamService;
-    private final String adminToken;
+    private final byte[] adminToken;
 
-    public ApiKeyAuthFilter(TeamService teamService,
-                            @Value("${tokengate.admin-token}") String adminToken) {
+    public ApiKeyAuthFilter(TeamService teamService, String adminToken) {
         this.teamService = teamService;
-        this.adminToken = adminToken;
+        this.adminToken = adminToken.getBytes(StandardCharsets.UTF_8);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String path = request.getRequestURI();
+        List<GrantedAuthority> authorities = new ArrayList<>();
+        Object principal = null;
 
-        if (path.startsWith("/admin")) {
-            String token = request.getHeader("X-Admin-Token");
-            if (token == null || !token.equals(adminToken)) {
-                reject(response, "Invalid or missing X-Admin-Token");
-                return;
+        // 1. Admin token (constant-time compare: timing attack se bachav)
+        String admin = request.getHeader("X-Admin-Token");
+        if (admin != null && MessageDigest.isEqual(admin.getBytes(StandardCharsets.UTF_8), adminToken)) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_ADMIN"));
+            principal = "admin";
+        }
+
+        // 2. Team API key
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            Optional<Team> team = teamService.findActiveByApiKey(header.substring(7).trim());
+            if (team.isPresent()) {
+                authorities.add(new SimpleGrantedAuthority("ROLE_TEAM"));
+                principal = team.get();
             }
-        } else if (path.startsWith("/v1/")) {
-            String header = request.getHeader("Authorization");
-            if (header == null || !header.startsWith("Bearer ")) {
-                reject(response, "Missing API key. Use header: Authorization: Bearer <key>");
-                return;
-            }
-            String apiKey = header.substring(7).trim();
-            Optional<Team> team = teamService.findActiveByApiKey(apiKey);
-            if (team.isEmpty()) {
-                reject(response, "Invalid API key");
-                return;
-            }
-            request.setAttribute(TEAM_ATTRIBUTE, team.get());
+        }
+
+        if (principal != null) {
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(new UsernamePasswordAuthenticationToken(principal, null, authorities));
+            SecurityContextHolder.setContext(context);
         }
 
         chain.doFilter(request, response);
-    }
-
-    private void reject(HttpServletResponse response, String message) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType("application/json");
-        response.getWriter().write("{\"error\":\"" + message + "\"}");
     }
 }

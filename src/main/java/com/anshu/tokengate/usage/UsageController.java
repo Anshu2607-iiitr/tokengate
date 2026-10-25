@@ -1,9 +1,9 @@
 package com.anshu.tokengate.usage;
 
-import com.anshu.tokengate.security.ApiKeyAuthFilter;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import com.anshu.tokengate.team.Team;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestAttribute;
+
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -26,7 +26,7 @@ public class UsageController {
     }
 
     @GetMapping("/today")
-    public UsageSummary today(@RequestAttribute(ApiKeyAuthFilter.TEAM_ATTRIBUTE) Team team) {
+    public UsageSummary today(@AuthenticationPrincipal Team team) {
         Instant from = LocalDate.now(ZONE).atStartOfDay(ZONE).toInstant();
 
         UsageRecordRepository.UsageTotals totals =

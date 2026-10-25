@@ -72,6 +72,7 @@ flowchart LR
 
 ## Design decisions
 
+- **Spring Security, stateless**: a custom filter only authenticates (team key or admin token); authorization rules live in one `SecurityFilterChain` (`/admin/**` needs ADMIN, `/v1/**` needs TEAM). Missing credentials return 401, wrong role returns 403. Admin token is compared in constant time.
 - **Hashed API keys**: a database leak does not leak usable keys. Keys are shown only once at creation.
 - **Async usage events**: cost tracking never adds latency to the user's request.
 - **Idempotent consumer**: Kafka can redeliver events, so each event has a unique `eventId` and duplicates are skipped (also enforced by a unique DB constraint).
@@ -139,7 +140,6 @@ Covers cost calculation, budget enforcement (with Mockito) and provider fallback
 - Sliding-window or token-bucket rate limiting
 - Redis-based real-time spend counter to tighten budget enforcement
 - Streaming responses (SSE)
-- Spring Security with role-based admin access
 - Flyway migrations and Testcontainers integration tests
 - Model prices from configuration or a pricing table
 
