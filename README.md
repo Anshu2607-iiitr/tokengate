@@ -87,11 +87,12 @@ flowchart LR
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Streaming fallback only before the first byte**: if the primary provider fails before sending anything, the stream falls back to the next provider. Once chunks have reached the client, switching would mix two answers, so the stream ends with an error event instead.
 - **Sliding-window rate limit**: a fixed window let a client send 2x the limit around a minute boundary (verified: 20 requests in 6 seconds with a 10/min limit). The sliding log counts the exact last 60 seconds; the Lua script makes remove + count + add atomic, so parallel requests cannot both slip in. Trade-off: memory per team grows with the limit.
+- **Versioned schema with Flyway**: the schema lives in numbered SQL migrations (`db/migration`), and Hibernate only validates it (`ddl-auto: validate`). V2 adds foreign keys and CHECK constraints that ORM auto-DDL never created, so the database rejects invalid data even if application code has a bug. The existing local database was adopted with `baseline-on-migrate`; fresh databases (Testcontainers, CI) run every migration, so migrations are tested on every push.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack
 
-**Backend:** Java 21, Spring Boot 4, Spring Data JPA, Spring for Apache Kafka, Spring Data Redis, springdoc-openapi
+**Backend:** Java 21, Spring Boot 4, Spring Data JPA, Spring for Apache Kafka, Spring Data Redis, springdoc-openapi, Flyway
 **Infra:** PostgreSQL 16, Apache Kafka (KRaft), Redis 7, Docker Compose, Ollama
 **Frontend:** React, Vite
 **Testing:** JUnit 5, AssertJ, Mockito
@@ -144,7 +145,6 @@ Unit tests cover cost calculation, budget enforcement (with Mockito) and provide
 ## Roadmap
 
 - Redis-based real-time spend counter to tighten budget enforcement
-- Flyway migrations
 - Model prices from configuration or a pricing table
 
 ## Note on pricing
