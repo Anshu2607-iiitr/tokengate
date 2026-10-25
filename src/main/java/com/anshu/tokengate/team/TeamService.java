@@ -45,6 +45,14 @@ public class TeamService {
         return teamRepository.save(team);
     }
 
+    @Transactional
+    public Team setSystemPrompt(Long teamId, String systemPrompt) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found: " + teamId));
+        team.setSystemPrompt(systemPrompt == null || systemPrompt.isBlank() ? null : systemPrompt.trim());
+        return teamRepository.save(team);
+    }
+
     public Optional<Team> findActiveByApiKey(String apiKey) {
         return teamRepository.findByApiKeyHash(hash(apiKey))
                 .filter(Team::isActive);

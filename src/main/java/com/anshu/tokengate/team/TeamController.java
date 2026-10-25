@@ -3,6 +3,7 @@ package com.anshu.tokengate.team;
 import com.anshu.tokengate.team.TeamDtos.CreateTeamRequest;
 import com.anshu.tokengate.team.TeamDtos.CreateTeamResponse;
 import com.anshu.tokengate.team.TeamDtos.SetBudgetRequest;
+import com.anshu.tokengate.team.TeamDtos.SetSystemPromptRequest;
 import com.anshu.tokengate.team.TeamDtos.TeamSummary;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -44,8 +45,13 @@ public class TeamController {
         return toSummary(teamService.setDailyBudget(id, request.dailyBudgetUsd()));
     }
 
+    @PutMapping("/{id}/system-prompt")
+    public TeamSummary setSystemPrompt(@PathVariable Long id, @Valid @RequestBody SetSystemPromptRequest request) {
+        return toSummary(teamService.setSystemPrompt(id, request.systemPrompt()));
+    }
+
     private static TeamSummary toSummary(Team t) {
         return new TeamSummary(t.getId(), t.getName(), t.getApiKeyPrefix(),
-                t.isActive(), t.getDailyBudgetUsd(), t.getCreatedAt());
+                t.isActive(), t.getDailyBudgetUsd(), t.getSystemPrompt(), t.getCreatedAt());
     }
 }

@@ -262,6 +262,19 @@ function AdminView() {
   const [newName, setNewName] = useState('')
   const [created, setCreated] = useState(null)
   const [budgetInputs, setBudgetInputs] = useState({})
+  const [promptTeamId, setPromptTeamId] = useState('')
+  const [promptText, setPromptText] = useState('')
+
+  async function savePrompt() {
+    if (!promptTeamId) return
+    setError('')
+    try {
+      await api(`/admin/teams/${promptTeamId}/system-prompt`, { method: 'PUT', headers, body: { systemPrompt: promptText.trim() || null } })
+      load()
+    } catch (e) {
+      setError(`Could not save system prompt: ${e.message}`)
+    }
+  }
 
   const headers = { 'X-Admin-Token': token.trim() }
 
@@ -370,6 +383,25 @@ function AdminView() {
                 </tbody>
               </table>
             </div>
+          </section>
+
+          <section className="card">
+            <h2>Team system prompt</h2>
+            <p className="muted">Instructions TokenGate adds to every request of the team (skipped if the request already has a system message).</p>
+            <div className="row">
+              <select value={promptTeamId} onChange={(e) => {
+                const id = e.target.value
+                setPromptTeamId(id)
+                const selected = teams.find((x) => String(x.id) === id)
+                setPromptText(selected?.systemPrompt ?? '')
+              }}>
+                <option value="">Select a team</option>
+                {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <textarea placeholder="e.g. Always reply in English, in under 80 words." value={promptText}
+              onChange={(e) => setPromptText(e.target.value)} />
+            <button onClick={savePrompt} disabled={!promptTeamId}>Save system prompt</button>
           </section>
 
           <section className="card">

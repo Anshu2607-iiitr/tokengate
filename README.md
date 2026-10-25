@@ -62,6 +62,7 @@ flowchart LR
 | Streaming (SSE) | `"stream": true` returns OpenAI-style `chat.completion.chunk` events, passed through from the provider; usage and cache still recorded |
 | Kafka resilience | Exponential-backoff retries, then a Dead Letter Topic; failed events are stored and listed at `/admin/dead-letters` |
 | Observability | Micrometer metrics (RED: rate, errors, duration + cost, cache hit rate, TTFT, dead letters) scraped by Prometheus, with a provisioned Grafana dashboard |
+| Team system prompts | Admins set default instructions per team; the gateway prepends them as a system message unless the request already has one |
 | Dashboard | React: usage stats, model breakdown, playground, team admin, alerts |
 | API docs | Swagger UI at `/swagger-ui.html` |
 
@@ -92,6 +93,7 @@ flowchart LR
 - **Versioned schema with Flyway**: the schema lives in numbered SQL migrations (`db/migration`), and Hibernate only validates it (`ddl-auto: validate`). V2 adds foreign keys and CHECK constraints that ORM auto-DDL never created, so the database rejects invalid data even if application code has a bug. The existing local database was adopted with `baseline-on-migrate`; fresh databases (Testcontainers, CI) run every migration, so migrations are tested on every push.
 - **Retries + Dead Letter Topic**: by default a failing Kafka event was retried a few times and then silently dropped. Now transient errors get 3 retries with exponential backoff (1s, 2s, 4s), while errors that can never succeed (broken JSON, foreign-key violation for an unknown team) skip retries. Either way the event goes to `llm-usage-events.DLT` with error headers, a separate consumer stores it, and the main pipeline keeps flowing. Added with a new Flyway migration (V3), without touching V1/V2.
 - **Observability with the RED method**: custom Micrometer metrics cover rate (requests by provider, cache hit/miss), errors (rejections by reason: rate limit, budget, provider unavailable) and duration (provider latency and time-to-first-token histograms for p50/p95), plus business metrics (cost per team, tokens, dead letters). Grafana's data source and dashboard are provisioned as code. Caveat: tags like `team` and `model` are fine at this scale but must be bounded in production to avoid high-cardinality metrics.
+- **Team system prompts before the cache key**: the team prompt is added before the cache lookup, so changing a prompt automatically stops serving answers cached under the old prompt. A client's own system message always wins. Prompt tokens are counted and billed like any other input.
 - **Known trade-off**: budgets are eventually consistent. Under heavy parallel load a team can slightly overshoot its budget, because cost is computed asynchronously. This keeps every request fast.
 
 ## Tech stack
@@ -131,6 +133,7 @@ The default admin token is `dev-admin-secret` (local development only). Override
 |---|---|---|---|
 | POST | `/admin/teams` | `X-Admin-Token` | Create a team, returns its API key once |
 | GET | `/admin/teams` | `X-Admin-Token` | List teams |
+| PUT | `/admin/teams/{id}/system-prompt` | `X-Admin-Token` | Set or remove the team's default system prompt |
 | PUT | `/admin/teams/{id}/budget` | `X-Admin-Token` | Set or remove daily budget (USD) |
 | GET | `/admin/alerts` | `X-Admin-Token` | Budget alerts |
 | POST | `/v1/chat/completions` | `Bearer tg_...` | OpenAI-compatible chat via the gateway |
@@ -141,7 +144,7 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 ## Tests
 
 ```bash
-./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest,DeadLetterIntegrationTest"
+./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,SystemPromptsTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest,DeadLetterIntegrationTest"
 ```
 
 Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.

@@ -58,6 +58,7 @@ public class GatewayService {
 
     public GatewayResult chat(ChatRequest request, Team team) {
         checkRateLimit(team);
+        request = SystemPrompts.apply(request, team); // cache key se pehle, taaki prompt badalne pe cache bhi badle
 
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
         if (cached.isPresent()) {
@@ -99,6 +100,7 @@ public class GatewayService {
 
     public void chatStream(ChatRequest request, Team team, HttpServletResponse response) {
         checkRateLimit(team);
+        request = SystemPrompts.apply(request, team); // cache key se pehle, taaki prompt badalne pe cache bhi badle
 
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
         if (cached.isPresent()) {

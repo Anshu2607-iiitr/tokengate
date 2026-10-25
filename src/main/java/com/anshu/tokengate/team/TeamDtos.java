@@ -26,12 +26,18 @@ public final class TeamDtos {
             @DecimalMin(value = "0.0", inclusive = false) BigDecimal dailyBudgetUsd
     ) {}
 
+    // null ya khaali bhejo to prompt hat jaayega
+    public record SetSystemPromptRequest(
+            @Size(max = 2000) String systemPrompt
+    ) {}
+
     public record TeamSummary(
             Long id,
             String name,
             String apiKeyPrefix,
             boolean active,
             BigDecimal dailyBudgetUsd,
+            String systemPrompt,
             Instant createdAt
     ) {}
 }

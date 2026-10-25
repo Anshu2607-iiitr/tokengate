@@ -21,7 +21,7 @@ jobs:
       - name: Run unit tests
         run: |
           chmod +x mvnw
-          ./mvnw -B test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest,DeadLetterIntegrationTest"
+          ./mvnw -B test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,SystemPromptsTest,TokenGateIntegrationTest,StreamingIntegrationTest,RateLimitIntegrationTest,DeadLetterIntegrationTest"
 
   dashboard-build:
     name: Dashboard build
