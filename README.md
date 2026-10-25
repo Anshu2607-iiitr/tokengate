@@ -130,17 +130,17 @@ Response headers on chat: `X-TokenGate-Provider`, `X-TokenGate-Cache` (`HIT`/`MI
 ## Tests
 
 ```bash
-./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest"
+./mvnw test -Dtest="PricingServiceTest,BudgetServiceTest,ProviderRouterTest,TokenGateIntegrationTest"
 ```
 
-Covers cost calculation, budget enforcement (with Mockito) and provider fallback.
+Unit tests cover cost calculation, budget enforcement (with Mockito) and provider fallback. The integration test uses Testcontainers to start real PostgreSQL, Kafka and Redis, and checks the full flow: team creation, gateway call, Kafka cost consumer, usage API, Redis cache hit, and 401/403 security rules.
 
 ## Roadmap
 
 - Sliding-window or token-bucket rate limiting
 - Redis-based real-time spend counter to tighten budget enforcement
 - Streaming responses (SSE)
-- Flyway migrations and Testcontainers integration tests
+- Flyway migrations
 - Model prices from configuration or a pricing table
 
 ## Note on pricing
