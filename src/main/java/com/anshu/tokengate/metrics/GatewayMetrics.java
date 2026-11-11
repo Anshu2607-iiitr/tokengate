@@ -19,7 +19,6 @@ public class GatewayMetrics {
 
     public GatewayMetrics(MeterRegistry registry, DeadLetterRepository deadLetters) {
         this.registry = registry;
-        // Gauge: scrape ke waqt DB se current count
         Gauge.builder("tokengate.kafka.dead.letters", deadLetters, repo -> repo.count())
                 .description("Events parked in the dead letter store")
                 .register(registry);
@@ -47,12 +46,22 @@ public class GatewayMetrics {
                 .increment(tokens);
     }
 
+    // NAYA: cache HIT pe jitne tokens provider ko bhejne se bache
+    public void tokensSaved(Team team, String model, int tokens) {
+        Counter.builder("tokengate.cache.tokens.saved")
+                .description("Tokens served from cache instead of the provider")
+                .tag("team", team.getName())
+                .tag("model", model)
+                .register(registry)
+                .increment(tokens);
+    }
+
     public void latency(String provider, boolean stream, long millis) {
         Timer.builder("tokengate.gateway.latency")
                 .description("Time spent waiting for the provider")
                 .tag("provider", provider)
                 .tag("stream", String.valueOf(stream))
-                .publishPercentileHistogram() // p50/p95 Prometheus me nikal sakein
+                .publishPercentileHistogram()
                 .register(registry)
                 .record(Duration.ofMillis(millis));
     }

@@ -43,6 +43,7 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
       SPRING_DATA_REDIS_HOST: redis
       TOKENGATE_ADMIN_TOKEN: ${TOKENGATE_ADMIN_TOKEN:-dev-admin-secret}
+      TOKENGATE_RATE_LIMIT_REQUESTS_PER_MINUTE: ${TOKENGATE_RATE_LIMIT:-10}
       TOKENGATE_PROVIDERS_OLLAMA_BASE_URL: http://host.docker.internal:11434/v1
       TOKENGATE_PROVIDERS_MOCK_BASE_URL: http://localhost:8080/mock/openai/v1
     extra_hosts:

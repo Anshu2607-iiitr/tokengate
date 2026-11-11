@@ -61,8 +61,9 @@ public class GatewayService {
         request = SystemPrompts.apply(request, team); // cache key se pehle, taaki prompt badalne pe cache bhi badle
 
         Optional<ChatResponse> cached = cacheService.get(team.getId(), request);
-        if (cached.isPresent()) {
+           if (cached.isPresent()) {
             metrics.request(team, "cache", request.model(), true, false, false);
+            metrics.tokensSaved(team, request.model(), cached.get().usage().totalTokens());
             log.info("CACHE HIT team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return new GatewayResult(cached.get(), true, "cache", false);
         }
@@ -109,8 +110,9 @@ public class GatewayService {
             sse.send(StreamChunks.content(c.id(), c.model(), contentOf(c)));
             sse.send(StreamChunks.finish(c.id(), c.model()));
             sse.send(StreamChunks.usage(c.id(), c.model(), c.usage()));
-            sse.done();
+                      sse.done();
             metrics.request(team, "cache", request.model(), true, true, false);
+            metrics.tokensSaved(team, request.model(), c.usage().totalTokens());
             log.info("CACHE HIT (stream) team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return;
         }

@@ -1,5 +1,6 @@
 package com.anshu.tokengate.cache;
 
+import com.anshu.tokengate.dto.ChatMessage;
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
 import org.slf4j.Logger;
@@ -15,6 +16,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -53,9 +55,15 @@ public class ResponseCacheService {
         }
     }
 
-    // teamId key me hai: ek team ka cache doosri team ko kabhi nahi milega
+    // Cache key = team + model + NORMALIZED messages.
+    // - teamId: ek team ka cache doosri team ko kabhi nahi milega
+    // - normalize: "What is India?" aur "what is india" ki same key
+    // - stream flag key me nahi: stream ON/OFF dono same cached jawab share karein
     private String key(Long teamId, ChatRequest request) {
-        String raw = jsonMapper.writeValueAsString(request);
+        List<ChatMessage> normalized = request.messages().stream()
+                .map(m -> new ChatMessage(m.role(), PromptNormalizer.normalize(m.content())))
+                .toList();
+        String raw = request.model() + "\n" + jsonMapper.writeValueAsString(normalized);
         return "cache:" + teamId + ":" + sha256(raw);
     }
 
