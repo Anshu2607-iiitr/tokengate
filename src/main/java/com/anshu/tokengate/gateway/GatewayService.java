@@ -3,6 +3,7 @@ package com.anshu.tokengate.gateway;
 import com.anshu.tokengate.budget.BudgetExceededException;
 import com.anshu.tokengate.budget.BudgetService;
 import com.anshu.tokengate.cache.ResponseCacheService;
+import com.anshu.tokengate.cache.SemanticCacheService;
 import com.anshu.tokengate.dto.ChatMessage;
 import com.anshu.tokengate.dto.ChatRequest;
 import com.anshu.tokengate.dto.ChatResponse;
@@ -39,19 +40,22 @@ public class GatewayService {
     private final RateLimitService rateLimitService;
     private final ResponseCacheService cacheService;
     private final GatewayMetrics metrics;
+    private final SemanticCacheService semanticCache;
 
     public GatewayService(ProviderRouter providerRouter,
                           UsageEventPublisher usageEventPublisher,
                           BudgetService budgetService,
                           RateLimitService rateLimitService,
                           ResponseCacheService cacheService,
-                          GatewayMetrics metrics) {
+                          GatewayMetrics metrics,
+                          SemanticCacheService semanticCache) {
         this.providerRouter = providerRouter;
         this.usageEventPublisher = usageEventPublisher;
         this.budgetService = budgetService;
         this.rateLimitService = rateLimitService;
         this.cacheService = cacheService;
         this.metrics = metrics;
+        this.semanticCache = semanticCache;
     }
 
     /* ---------------- Normal (non-streaming) ---------------- */
@@ -66,6 +70,16 @@ public class GatewayService {
             metrics.tokensSaved(team, request.model(), cached.get().usage().totalTokens());
             log.info("CACHE HIT team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return new GatewayResult(cached.get(), true, "cache", false);
+        }
+
+        SemanticCacheService.Lookup semantic = semanticCache.lookup(team, request);
+        if (semantic.hit().isPresent()) {
+            ChatResponse hit = semantic.hit().get().response();
+            cacheService.put(team.getId(), request, hit); // agli baar exact HIT, aur tez
+            metrics.request(team, "semantic-cache", request.model(), true, false, false);
+            metrics.tokensSaved(team, request.model(), hit.usage().totalTokens());
+            log.info("SEMANTIC HIT team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
+            return new GatewayResult(hit, true, "semantic-cache", false);
         }
 
         checkBudget(team);
@@ -84,6 +98,7 @@ public class GatewayService {
         publishUsage(team, result.providerName(), response, latencyMs);
         if (!result.fallbackUsed()) {
             cacheService.put(team.getId(), request, response);
+            semanticCache.store(team, request, semantic, response);
         }
 
         metrics.request(team, result.providerName(), response.model(), false, false, result.fallbackUsed());
@@ -114,6 +129,21 @@ public class GatewayService {
             metrics.request(team, "cache", request.model(), true, true, false);
             metrics.tokensSaved(team, request.model(), c.usage().totalTokens());
             log.info("CACHE HIT (stream) team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
+            return;
+        }
+
+        SemanticCacheService.Lookup semantic = semanticCache.lookup(team, request);
+        if (semantic.hit().isPresent()) {
+            ChatResponse c = semantic.hit().get().response();
+            SseWriter sse = new SseWriter(response, headers("semantic-cache", false, true));
+            sse.send(StreamChunks.content(c.id(), c.model(), contentOf(c)));
+            sse.send(StreamChunks.finish(c.id(), c.model()));
+            sse.send(StreamChunks.usage(c.id(), c.model(), c.usage()));
+            sse.done();
+            cacheService.put(team.getId(), request, c);
+            metrics.request(team, "semantic-cache", request.model(), true, true, false);
+            metrics.tokensSaved(team, request.model(), c.usage().totalTokens());
+            log.info("SEMANTIC HIT (stream) team={} model={} (provider skipped, cost $0)", team.getName(), request.model());
             return;
         }
 
@@ -170,6 +200,7 @@ public class GatewayService {
         publishUsage(team, outcome.providerName(), full, latencyMs);
         if (!outcome.fallbackUsed()) {
             cacheService.put(team.getId(), request, full);
+            semanticCache.store(team, request, semantic, full);
         }
 
         metrics.request(team, outcome.providerName(), full.model(), false, true, outcome.fallbackUsed());

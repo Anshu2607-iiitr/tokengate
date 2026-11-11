@@ -173,6 +173,10 @@ After starting the stack, one command checks the running system end to end (16 c
 powershell -ExecutionPolicy Bypass -File scripts\smoke-test.ps1
 ```
 
+## Semantic cache
+
+Repeated questions are served from cache even when phrased differently: normalized exact cache, then pgvector similarity search with negation and number guards. Design, safety rules and load test: [docs/semantic-cache.md](docs/semantic-cache.md).
+
 ## Roadmap
 
 - Redis-based real-time spend counter to tighten budget enforcement

@@ -28,13 +28,15 @@ public class Team {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
-    // null = no limit
     @Column(name = "daily_budget_usd", precision = 12, scale = 6)
     private BigDecimal dailyBudgetUsd;
 
-    // null = koi default instruction nahi
     @Column(name = "system_prompt", length = 2000)
     private String systemPrompt;
+
+    // Opt-in: semantic cache sirf un teams ke liye jo ON karein
+    @Column(name = "semantic_cache_enabled", nullable = false)
+    private boolean semanticCacheEnabled = false;
 
     protected Team() {
         // JPA ke liye zaroori
@@ -54,12 +56,9 @@ public class Team {
     public Instant getCreatedAt() { return createdAt; }
     public BigDecimal getDailyBudgetUsd() { return dailyBudgetUsd; }
     public String getSystemPrompt() { return systemPrompt; }
+    public boolean isSemanticCacheEnabled() { return semanticCacheEnabled; }
 
-    public void setDailyBudgetUsd(BigDecimal dailyBudgetUsd) {
-        this.dailyBudgetUsd = dailyBudgetUsd;
-    }
-
-    public void setSystemPrompt(String systemPrompt) {
-        this.systemPrompt = systemPrompt;
-    }
+    public void setDailyBudgetUsd(BigDecimal dailyBudgetUsd) { this.dailyBudgetUsd = dailyBudgetUsd; }
+    public void setSystemPrompt(String systemPrompt) { this.systemPrompt = systemPrompt; }
+    public void setSemanticCacheEnabled(boolean semanticCacheEnabled) { this.semanticCacheEnabled = semanticCacheEnabled; }
 }

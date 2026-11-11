@@ -53,6 +53,14 @@ public class TeamService {
         return teamRepository.save(team);
     }
 
+    @Transactional
+    public Team setSemanticCacheEnabled(Long teamId, boolean enabled) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Team not found: " + teamId));
+        team.setSemanticCacheEnabled(enabled);
+        return teamRepository.save(team);
+    }
+
     public Optional<Team> findActiveByApiKey(String apiKey) {
         return teamRepository.findByApiKeyHash(hash(apiKey))
                 .filter(Team::isActive);

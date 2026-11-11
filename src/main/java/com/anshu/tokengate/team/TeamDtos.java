@@ -21,15 +21,11 @@ public final class TeamDtos {
 
     public record CreateTeamResponse(Long id, String name, String apiKey, String note) {}
 
-    // null bhejo to limit hat jaayegi
-    public record SetBudgetRequest(
-            @DecimalMin(value = "0.0", inclusive = false) BigDecimal dailyBudgetUsd
-    ) {}
+    public record SetBudgetRequest(@DecimalMin(value = "0.0", inclusive = false) BigDecimal dailyBudgetUsd) {}
 
-    // null ya khaali bhejo to prompt hat jaayega
-    public record SetSystemPromptRequest(
-            @Size(max = 2000) String systemPrompt
-    ) {}
+    public record SetSystemPromptRequest(@Size(max = 2000) String systemPrompt) {}
+
+    public record SetSemanticCacheRequest(boolean enabled) {}
 
     public record TeamSummary(
             Long id,
@@ -38,6 +34,7 @@ public final class TeamDtos {
             boolean active,
             BigDecimal dailyBudgetUsd,
             String systemPrompt,
+            boolean semanticCacheEnabled,
             Instant createdAt
     ) {}
 }

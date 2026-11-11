@@ -34,3 +34,10 @@ build/
 
 # Production secrets
 .env
+
+backup.sql
+
+backup.sql
+
+backup.sql
+loadtest/result-*.json
